@@ -76,13 +76,13 @@ while(1) {
 
     # processing of read data
     foreach my $socket (keys (%input_data)) {
-      if ( $input_data{$socket} =~ /\n\n/) {
-        print "Get empty line from $socket\n";
-        process_client($socket, $input_data{$socket});
-        $select->remove($socket);
-        delete $input_data{$socket};
-        $socket->close();
-      }
+        if ( $input_data{$socket} =~ /\n\n/) {
+            print "Get empty line from $socket\n";
+            process_client($socket, $input_data{$socket});
+            $select->remove($socket);
+            delete $input_data{$socket};
+            $socket->close();
+        }
     }
 }
 close($server);
