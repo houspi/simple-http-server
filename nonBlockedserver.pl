@@ -25,10 +25,10 @@ my %status = (
         "200"   => "OK",
         "404"   => "NOT FOUND",
     );
-my $port = $DEFAULT_PORT;
 
 # Create socket
 # Set O_NONBLOCK flag
+my $port = $DEFAULT_PORT;
 my $server = IO::Socket::INET->new(
         LocalPort => $port, 
         Type => SOCK_STREAM, 
@@ -57,7 +57,7 @@ while(1) {
             $select->add($client);
         } else {
             # read data from client
-            print "read dada from $socket\n";
+            print "read data from $socket\n";
             my $data = "";
             #my $rv = $socket->recv($data, BUF_SIZE);
             if ( ! $socket->recv($data, BUF_SIZE) && !length($data)) {
@@ -74,11 +74,11 @@ while(1) {
         }
     }
 
-    # process readed data
+    # processing of read data
     foreach my $socket (keys (%input_data)) {
       if ( $input_data{$socket} =~ /\n\n/) {
         print "Get empty line from $socket\n";
-        handle_client($socket, $input_data{$socket});
+        process_client($socket, $input_data{$socket});
         $select->remove($socket);
         delete $input_data{$socket};
         $socket->close();
@@ -87,10 +87,15 @@ while(1) {
 }
 close($server);
 
-sub handle_client {
+
+=head1 process_client
+
+=cut
+sub process_client {
     my $client = shift;
-    print "start handle\n";
     my $data = shift;
+
+    print "start processing\n";
 
     my @request_headers = ();
     foreach ( split(/\n/, $data) ) {
@@ -102,16 +107,19 @@ sub handle_client {
             $commands{$command}->($client, $param);
         }
     }
-    
 }
 
+
+=head1 command_get
+
+=cut
 sub command_get {
     my $client = shift;
     my $param = shift;
-    my $content = "";
-    
+
     print "command GET\n";
     print "PARAM:$param\n";
+    my $content = "";
     $param =~ s/\.\.//g;
     my $status_code;
     if (open(FILE, $DIRECTORY_ROOT . $param)) {

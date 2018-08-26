@@ -1,4 +1,9 @@
 #!/usr/bin/perl -w
+#
+# simple TCP Server
+#
+# houspi@gmail.com
+
 
 use strict;
 use IO::Socket; 
@@ -14,24 +19,35 @@ my %status = (
         "200"   => "OK",
         "404"   => "NOT FOUND",
     );
-my $port = $DEFAULT_PORT;
 
+# Create socket
+my $port = $DEFAULT_PORT;
 my $server = IO::Socket::INET->new(
         LocalPort => $port, 
         Type => SOCK_STREAM, 
         Reuse => 1, 
         Listen => 5 )
     or die "Couldn't start server on port $port : $@\n"; 
+print "Start listening on $port\n";
 
+# main loop
+# accept connection
 while (my $client = $server->accept()) {
     print $client, " client connected\n";
-    handle_client($client);
+    # processing of client
+    process_client($client);
+    $client->close();
 }
 close($server);
 
-sub handle_client {
+
+=head1 process_client
+
+=cut
+sub process_client {
     my $client = shift;
-    print "start handle\n";
+
+    print "start processing\n";
     my $data;
     my @request_headers = ();
     $client->recv($data, 2048, 0);
@@ -45,16 +61,19 @@ sub handle_client {
             $commands{$command}->($client, $param);
         }
     }
-    
 }
 
+
+=head1 command_get
+
+=cut
 sub command_get {
     my $client = shift;
     my $param = shift;
-    my $content = "";
-    
+
     print "command GET\n";
     print "PARAM:$param\n";
+    my $content = "";
     $param =~ s/\.\.//g;
     my $status_code;
     if (open(FILE, $DIRECTORY_ROOT . $param)) {
