@@ -76,13 +76,14 @@ sub command_get {
     my $content = "";
     $param =~ s/\.\.//g;
     my $status_code;
-    if (open(FILE, $DIRECTORY_ROOT . $param)) {
+    my $file;
+    if (open($file, $DIRECTORY_ROOT . $param)) {
         $status_code = "200";
         {
             local $/ = undef;
-            $content = <FILE>;
+            $content = <$file>;
         }
-        close(FILE);
+        close($file);
     } else {
         $status_code = "404";
         $content = "";
