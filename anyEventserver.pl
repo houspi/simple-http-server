@@ -43,7 +43,8 @@ my $guard = tcp_server "0", $port,
             }
         );
         my $id = "$host:$port";
-        my $reader; $reader = sub {
+        my $reader; 
+        $reader = sub {
             my $data = $_[1];
             $input_data{$id} .= $_[1] . "\n";
             if ( $input_data{$id} =~ /\n\n/ ) {
