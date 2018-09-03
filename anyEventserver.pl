@@ -23,50 +23,33 @@ my %status = (
         "404"   => "NOT FOUND",
     );
 
-my $handled = 0;
-$|++;
-
-# Create socket
-# Set O_NONBLOCK flag
 my $port = $DEFAULT_PORT;
-#my $server = IO::Socket::INET->new(
-#        LocalPort => $port, 
-#        Type => SOCK_STREAM, 
-#        Reuse => 1, 
-#        Listen => MAX_CLIENTS )
-#    or die "Couldn't start server on port $port : $@\n"; 
-#fcntl($server, F_SETFL, fcntl($server, F_GETFL, 0) | O_NONBLOCK);
 
 #my $condvar = AnyEvent->condvar;
-my $w; 
-my $t; 
 
-my %conns;
 my %input_data = ();
 
 my $guard = tcp_server "0", $port,  
     sub {
         my ($fh, $host, $port) = @_;
-        syswrite $fh, "; you have " . scalar(keys %conns) . " buddies\015\012";
         my $hdl = AnyEvent::Handle->new(
             fh => $fh,
             on_error => sub { 
                 my ($hdl, $fatal, $msg) = @_;
                 my $id = "$host:$port";
                 shutdown($fh, 2);
-                delete $conns{$id};
+                delete $input_data{$id};
                 $hdl->destroy;
             }
         );
         my $id = "$host:$port";
-        $conns{$id} = $fh;
         my $reader; $reader = sub {
             my $data = $_[1];
             $input_data{$id} .= $_[1] . "\n";
             if ( $input_data{$id} =~ /\n\n/ ) {
                 process_client($fh, $host, $port);
                 shutdown($fh, 2);
-                delete $conns{$id};
+                delete $input_data{$id};
                 $hdl->destroy;
             }
             $hdl->push_read( line => $reader );
@@ -74,8 +57,8 @@ my $guard = tcp_server "0", $port,
         $hdl->push_read( line => $reader );
     };
 
-
-print "Call recv\n";
+#main loop
+print "main loop\n";
 AnyEvent->condvar->recv;
 
 
@@ -113,7 +96,8 @@ sub command_get {
     $param =~ s/\.\.//g;
     my $status_code;
     my $file;
-    if (open($file, $DIRECTORY_ROOT . $param)) {
+    my $file_name = $DIRECTORY_ROOT . $param;
+    if ( -f $file_name && open($file, $file_name)) {
         $status_code = "200";
         {
             local $/ = undef;

@@ -13,6 +13,7 @@ use IO::Select;
 use Tie::RefHash;
 
 use constant BUF_SIZE => 1024;
+use constant MAX_CLIENTS => 10;
 
 
 my $DEFAULT_PORT = "1080";
@@ -33,21 +34,20 @@ my $server = IO::Socket::INET->new(
         LocalPort => $port, 
         Type => SOCK_STREAM, 
         Reuse => 1, 
-        Listen => 5 )
+        Listen => MAX_CLIENTS )
     or die "Couldn't start server on port $port : $@\n"; 
 fcntl($server, F_SETFL, fcntl($server, F_GETFL, 0) | O_NONBLOCK);
 print "Start listening on $port\n";
+
 # Create Select object. Init it with the server socket.
 my $select = IO::Select->new($server);
 
 my %input_data = ();
-tie %input_data, 'Tie::RefHash';
 #main loop
 while(1) {
     # read data from client
     foreach my $socket ($select->can_read())  {
         if($socket == $server) {
-            print "New connect\n";
             # new client
             # Set O_NONBLOCK flag
             # add to Select object
@@ -57,7 +57,6 @@ while(1) {
             $select->add($client);
         } else {
             # read data from client
-            print "read data from $socket\n";
             my $data = "";
             #my $rv = $socket->recv($data, BUF_SIZE);
             if ( ! $socket->recv($data, BUF_SIZE) && !length($data)) {
@@ -68,20 +67,19 @@ while(1) {
                 $socket->close();
             } else {
                 $data =~ s/\r\n/\n/g;
-                print "SIZE:" . length($data) . "\n";
                 $input_data{$socket} .= $data;
             }
         }
     }
-
-    # processing of read data
-    foreach my $socket (keys (%input_data)) {
-        if ( $input_data{$socket} =~ /\n\n/) {
-            print "Get empty line from $socket\n";
-            process_client($socket, $input_data{$socket});
-            $select->remove($socket);
-            delete $input_data{$socket};
-            $socket->close();
+    foreach my $socket ($select->can_write())  {
+        unless($socket == $server) {
+            if ( exists($input_data{$socket}) && $input_data{$socket} =~ /\n\n/) {
+                process_client($socket, $input_data{$socket});
+                $select->remove($socket);
+                delete $input_data{$socket};
+                $socket->shutdown(2);
+                #shutdown($socket, 2);
+            }
         }
     }
 }
@@ -94,8 +92,6 @@ close($server);
 sub process_client {
     my $client = shift;
     my $data = shift;
-
-    print "start processing\n";
 
     my @request_headers = ();
     foreach ( split(/\n/, $data) ) {
@@ -117,13 +113,12 @@ sub command_get {
     my $client = shift;
     my $param = shift;
 
-    print "command GET\n";
-    print "PARAM:$param\n";
     my $content = "";
     $param =~ s/\.\.//g;
     my $status_code;
     my $file;
-    if (open($file, $DIRECTORY_ROOT . $param)) {
+    my $file_name = $DIRECTORY_ROOT . $param;
+    if ( -f $file_name && open($file, $file_name)) {
         $status_code = "200";
         {
             local $/ = undef;
@@ -134,9 +129,9 @@ sub command_get {
         $status_code = "404";
         $content = "";
     }
-    $client->send("HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n" );
-    $client->send("Content-type: text/html\n");
-    $client->send("Content-lenght: " . length($content) . "\n");
-    $client->send("\n");
-    $client->send($content);
+    syswrite($client, "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n" );
+    syswrite($client, "Content-type: text/html\n");
+    syswrite($client, "Content-lenght: " . length($content) . "\n\n");
+    syswrite($client, $content);
+
 }

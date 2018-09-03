@@ -47,7 +47,6 @@ close($server);
 sub process_client {
     my $client = shift;
 
-    print "start processing\n";
     my $data;
     my @request_headers = ();
     $client->recv($data, 2048, 0);
@@ -71,8 +70,6 @@ sub command_get {
     my $client = shift;
     my $param = shift;
 
-    print "command GET\n";
-    print "PARAM:$param\n";
     my $content = "";
     $param =~ s/\.\.//g;
     my $status_code;
