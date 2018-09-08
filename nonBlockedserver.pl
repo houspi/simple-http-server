@@ -1,23 +1,24 @@
 #!/usr/bin/perl -w
 #
-# nonblocked TCP Server
+# non Blocked TCP Server
 #
 # houspi@gmail.com
+#
 
 use strict;
 use POSIX;
+use Getopt::Std;
 use Socket;
-use Fcntl;
 use IO::Socket; 
 use IO::Select;
-use Tie::RefHash;
+use Fcntl;
 
 use constant BUF_SIZE => 1024;
-use constant MAX_CLIENTS => 10;
+use constant DEFAULT_QUEUE_SIZE => 16;
+use constant DEFAULT_PORT => 1080;
 
-
-my $DEFAULT_PORT = "1080";
 my $DIRECTORY_ROOT = "/home/edi/test/simple-http-server";
+
 my %commands = (
         "GET"   => \&command_get,
     );
@@ -27,58 +28,96 @@ my %status = (
         "404"   => "NOT FOUND",
     );
 
-# Create socket
-# Set O_NONBLOCK flag
-my $port = $DEFAULT_PORT;
+# Parsing command line options
+my %opts;
+getopts('hdl:p:q:', \%opts);
+
+if ($opts{'h'}) {
+    Usage();
+    exit(0);
+}
+
+my $log_level;
+if ( exists($opts{'l'}) ) {
+    $log_level = $opts{'l'};
+    $log_level =~ s/\D//g;
+}
+$log_level = 1 if ($log_level !~ /\d/);
+
+my $port;
+if ($opts{'p'}) {
+    $port = $opts{'p'};
+    $port =~ s/\D//g;
+}
+$port = DEFAULT_PORT if (!$port);
+
+my $queue_size;
+if ($opts{'q'}) {
+    $queue_size = $opts{'q'};
+    $queue_size =~ s/\D//g;
+}
+$queue_size = DEFAULT_QUEUE_SIZE if (!$queue_size);
+
+if ($opts{'d'}) {
+    #Turn off log if run as a daemon
+    $log_level = 0;
+    daemonize();
+}
+
+# Create server socket
+print_log(1, "Start new server on $port. QUEUE size $queue_size\n");
 my $server = IO::Socket::INET->new(
         LocalPort => $port, 
         Type => SOCK_STREAM, 
-        Reuse => 1, 
-        Listen => MAX_CLIENTS )
+        ReuseAddr => 1,
+        ReusePort => 1,
+        Listen => $queue_size,
+        Blocking => 0,
+    )
     or die "Couldn't start server on port $port : $@\n"; 
-fcntl($server, F_SETFL, fcntl($server, F_GETFL, 0) | O_NONBLOCK);
-print "Start listening on $port\n";
-
-# Create Select object. Init it with the server socket.
 my $select = IO::Select->new($server);
 
 my %input_data = ();
+my $clients_count = 0;
 #main loop
 while(1) {
-    # read data from client
     foreach my $socket ($select->can_read())  {
         if($socket == $server) {
             # new client
-            # Set O_NONBLOCK flag
-            # add to Select object
             my $client = $server->accept();
-            print "Client handle $client\n";
             fcntl($client, F_SETFL, fcntl($client, F_GETFL, 0) | O_NONBLOCK);
             $select->add($client);
+            $clients_count++;
+            print_log(1, "New Client. Handle: $client\n");
+            print_log(2, "Clients count: $clients_count\n");
         } else {
             # read data from client
             my $data = "";
-            #my $rv = $socket->recv($data, BUF_SIZE);
             if ( ! $socket->recv($data, BUF_SIZE) && !length($data)) {
                 # error on reading
                 # or client close the socket
+                print_log(2, "Error on socket: $socket\n");
                 $select->remove($socket);
                 delete $input_data{$socket};
                 $socket->close();
+                $clients_count--;
+                print_log(2, "Clients count: $clients_count\n");
             } else {
-                $data =~ s/\r\n/\n/g;
                 $input_data{$socket} .= $data;
             }
         }
     }
+    
     foreach my $socket ($select->can_write())  {
         unless($socket == $server) {
-            if ( exists($input_data{$socket}) && $input_data{$socket} =~ /\n\n/) {
+            if ( exists($input_data{$socket}) && $input_data{$socket} =~ /\r\n\r\n/) {
                 process_client($socket, $input_data{$socket});
                 $select->remove($socket);
                 delete $input_data{$socket};
+                print_log(2, "Close socket: $socket\n");
                 $socket->shutdown(2);
-                #shutdown($socket, 2);
+                $clients_count--;
+                print_log(2, "Clients count: $clients_count\n");
             }
         }
     }
@@ -86,7 +125,7 @@ while(1) {
 close($server);
 
 
-=head1 process_client
+=item process_client
 
 =cut
 sub process_client {
@@ -94,30 +133,31 @@ sub process_client {
     my $data = shift;
 
     my @request_headers = ();
-    foreach ( split(/\n/, $data) ) {
+    foreach ( split(/\r\n/, $data) ) {
         push @request_headers, $_;
     }
     foreach ( @request_headers ) {
         my ($command, $param) = split(/ /, $_);
         if (exists($commands{$command})) {
+            print_log(2, "Client: $client Command: $command\n");
             $commands{$command}->($client, $param);
         }
     }
 }
 
 
-=head1 command_get
+=item command_get
 
 =cut
 sub command_get {
     my $client = shift;
     my $param = shift;
 
-    my $content = "";
     $param =~ s/\.\.//g;
-    my $status_code;
-    my $file;
     my $file_name = $DIRECTORY_ROOT . $param;
+
+    my ($content, $status_code, $file);
+
     if ( -f $file_name && open($file, $file_name)) {
         $status_code = "200";
         {
@@ -134,4 +174,40 @@ sub command_get {
     syswrite($client, "Content-lenght: " . length($content) . "\n\n");
     syswrite($client, $content);
 
+}
+
+=item print_log
+print log info
+=cut
+sub print_log {
+    my $level = shift;
+    print STDERR join(" ", @_) if ($level <= $log_level);
+}
+
+=item daemonize
+run program as a daemon
+=cut
+sub daemonize {
+   setsid() or die "Can't call setsid: $!";
+   my $pid = fork() // die "Can't call fork: $!";
+   exit(0) if $pid;
+
+   open (STDIN, "</dev/null");
+   open (STDOUT, ">/dev/null");
+   open (STDERR, ">&STDOUT");
+ }
+ 
+=item Usage
+print help screen
+=cut
+sub Usage {
+    print <<EOF
+Usage $0 [-h] | [-d] [-l LogLevel] [-p Port] [ -q NUM ] 
+  -h  display this help and exit
+  -d  run as a daemon
+  -l  set log level of the messages. 1 by default. 0 to turn off.
+  -p  listen on Port
+  -q  maximum length of the queue size of pending connections
+
+EOF
 }
