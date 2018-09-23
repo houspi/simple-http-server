@@ -193,12 +193,12 @@ sub method_get {
     my $result;
     $result = syswrite($client, $http_response_header);
     if ($result != length($http_response_header)) {
-        print_log(2, "error when send responce header to  $client\n");
+        print_log(2, "error when send response header to  $client\n");
         return 1;
     }
     $result = syswrite($client, $content);
     if ($result != length($content)) {
-        print_log(2, "error when send responce content to  $client\n");
+        print_log(2, "error when send response content to  $client\n");
         return 1;
     }
     return 0;
