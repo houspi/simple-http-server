@@ -90,6 +90,7 @@ my $guard = tcp_server "0", $port,
             if ($_[1]) {
                 push($input_data{$id}, $_[1]);
             } else {
+                # result is ignored for now
                 process_client($fh, $host, $port);
                 print_log(2, "close connection $host, $port\n");
                 shutdown($fh, 2);
@@ -108,7 +109,13 @@ $condvar->recv;
 
 
 =item process_client
-
+    client - client's socket
+    host - client's ip address
+    port - client's port
+    
+    return value
+    0 if success
+    non-zero if any error
 =cut
 sub process_client {
     my ($client, $host, $port) = @_;
@@ -140,17 +147,25 @@ sub process_client {
             print_log(2, "$_ => $request_headers{$_}\n");
         }
         if ( $method && exists($http_methods{$method}) ) {
-            $http_methods{$method}->($client, $uri);
+            return $http_methods{$method}->($client, $uri);
         } else {
             print_log(2, "error unknown method $method from $host, $port\n");
+            return 1;
         }
     } else {
         print_log(2, "error empty request from $host, $port\n");
+        return 1;
     }
+    return 0;
 }
 
 =item method_get
-
+    client - client's socket
+    uri - URI
+    
+    return value
+    0 if success
+    non-zero if any error
 =cut
 sub method_get {
     my $client = shift;
