@@ -154,7 +154,7 @@ sub process_client {
             print_log(2, "$_ => $request_headers{$_}\n");
         }
         if ( $method && exists($http_methods{$method}) ) {
-            $rv = $http_methods{$method}->($client, $uri);
+            $rv = $http_methods{$method}->($client, \%request_headers, $uri);
         } else {
             print_log(2, "error unknown method $method from $host, $port\n");
             $rv =  method_bad_request($client);
@@ -168,6 +168,7 @@ sub process_client {
 
 =item method_get
     client - client's socket
+    request_headers - request's headers
     uri - URI
     
     return value
@@ -176,6 +177,7 @@ sub process_client {
 =cut
 sub method_get {
     my $client = shift;
+    my $request_headers = shift;
     my $uri = shift;
 
     my $content = "";
