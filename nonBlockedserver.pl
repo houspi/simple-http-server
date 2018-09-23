@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# non Blocked TCP Server
+# simple non Blocked HTTP Server
 #
 # houspi@gmail.com
 #
@@ -14,7 +14,7 @@ use IO::Select;
 use Fcntl;
 
 use constant BUF_SIZE => 1024;
-use constant DEFAULT_QUEUE_SIZE => 16;
+use constant MAX_CLIENTS => 16;
 use constant DEFAULT_PORT => 1080;
 
 my $DIRECTORY_ROOT = "/home/edi/test/simple-http-server";
@@ -30,14 +30,14 @@ my %status = (
 
 # Parsing command line options
 my %opts;
-getopts('hdl:p:q:', \%opts);
+getopts('hdl:p:c:', \%opts);
 
 if ($opts{'h'}) {
     Usage();
     exit(0);
 }
 
-my $log_level;
+my $log_level = 0;
 if ( exists($opts{'l'}) ) {
     $log_level = $opts{'l'};
     $log_level =~ s/\D//g;
@@ -51,12 +51,12 @@ if ($opts{'p'}) {
 }
 $port = DEFAULT_PORT if (!$port);
 
-my $queue_size;
-if ($opts{'q'}) {
-    $queue_size = $opts{'q'};
-    $queue_size =~ s/\D//g;
+my $max_clients;
+if ($opts{'c'}) {
+    $max_clients = $opts{'c'};
+    $max_clients =~ s/\D//g;
 }
-$queue_size = DEFAULT_QUEUE_SIZE if (!$queue_size);
+$max_clients = MAX_CLIENTS if (!$max_clients);
 
 if ($opts{'d'}) {
     #Turn off log if run as a daemon
@@ -65,13 +65,13 @@ if ($opts{'d'}) {
 }
 
 # Create server socket
-print_log(1, "Start new server on $port. QUEUE size $queue_size\n");
+print_log(1, "Start new server on $port.\nMax of concurrent requests $max_clients\n");
 my $server = IO::Socket::INET->new(
         LocalPort => $port, 
         Type => SOCK_STREAM, 
         ReuseAddr => 1,
         ReusePort => 1,
-        Listen => $queue_size,
+        Listen => $max_clients,
         Blocking => 0,
     )
     or die "Couldn't start server on port $port : $@\n"; 
@@ -79,6 +79,8 @@ my $select = IO::Select->new($server);
 
 my %input_data = ();
 my $clients_count = 0;
+my $requests_total = 0;
+
 #main loop
 while(1) {
     foreach my $socket ($select->can_read())  {
@@ -88,8 +90,9 @@ while(1) {
             fcntl($client, F_SETFL, fcntl($client, F_GETFL, 0) | O_NONBLOCK);
             $select->add($client);
             $clients_count++;
+            $requests_total++;
             print_log(1, "New Client. Handle: $client\n");
-            print_log(2, "Clients count: $clients_count\n");
+            print_log(2, "Active clients count: $clients_count\nTotal processed requests: $requests_total\n");
         } else {
             # read data from client
             my $data = "";
@@ -101,7 +104,6 @@ while(1) {
                 delete $input_data{$socket};
                 $socket->close();
                 $clients_count--;
-                print_log(2, "Clients count: $clients_count\n");
             } else {
                 $input_data{$socket} .= $data;
             }
@@ -115,9 +117,8 @@ while(1) {
                 $select->remove($socket);
                 delete $input_data{$socket};
                 print_log(2, "Close socket: $socket\n");
-                $socket->shutdown(2);
+                $socket->close();
                 $clients_count--;
-                print_log(2, "Clients count: $clients_count\n");
             }
         }
     }
@@ -126,7 +127,8 @@ close($server);
 
 
 =item process_client
-
+    client - client's socket
+    data - client's data
 =cut
 sub process_client {
     my $client = shift;
@@ -147,7 +149,8 @@ sub process_client {
 
 
 =item command_get
-
+    client - client's socket
+    param - URI
 =cut
 sub command_get {
     my $client = shift;
@@ -202,12 +205,12 @@ print help screen
 =cut
 sub Usage {
     print <<EOF
-Usage $0 [-h] | [-d] [-l LogLevel] [-p Port] [ -q NUM ] 
+Usage $0 [-h] | [-d] [-l LogLevel] [-p Port] [ -m NUM ] 
   -h  display this help and exit
   -d  run as a daemon
   -l  set log level of the messages. 1 by default. 0 to turn off.
   -p  listen on Port
-  -q  maximum length of the queue size of pending connections
+  -c  max of concurrent requests 
 
 EOF
 }
