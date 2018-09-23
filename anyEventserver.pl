@@ -17,6 +17,7 @@ use AnyEvent::Handle;
 use constant DEFAULT_PORT => 1080;
 
 my $DIRECTORY_ROOT = "/home/edi/test/simple-http-server";
+my $server_header = "Server: anyEvent_test\n";
 
 my %http_methods = (
         "DELETE" => \&method_not_allowed,
@@ -197,17 +198,17 @@ sub method_get {
         $content = "";
     }
     my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n";
+    $http_response_header .= $server_header;
     $http_response_header .= "Content-type: text/html\n";
     $http_response_header .= "Content-lenght: " . length($content) . "\n\n";
-    my $result;
     my $rv = 0;
-    $result = syswrite($client, $http_response_header);
+    my $result = syswrite($client, $http_response_header) // -1;
     if ($result != length($http_response_header)) {
         print_log(2, "error when send response header to  $client\n");
         $rv = 1;
     }
     if( !$rv ) {
-        $result = syswrite($client, $content);
+        $result = syswrite($client, $content) // -1;
         if ($result != length($content)) {
             print_log(2, "error when send response content to  $client\n");
             $rv = 1;
@@ -226,13 +227,13 @@ sub method_get {
 sub method_not_allowed {
     my $client = shift;
 
-    my $status_code;
-    $status_code = "405";
+    my $status_code = "405";
 
-    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n\n";
-    my $result;
+    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n";
+    $http_response_header .= $server_header;
+    $http_response_header .= "\n";
     my $rv = 0;
-    $result = syswrite($client, $http_response_header);
+    my $result = syswrite($client, $http_response_header) // -1;
     if ($result != length($http_response_header)) {
         print_log(2, "error when send response header to  $client\n");
         $rv = 1;
@@ -250,13 +251,13 @@ sub method_not_allowed {
 sub method_bad_request {
     my $client = shift;
 
-    my $status_code;
-    $status_code = "400";
+    my $status_code = "400";
 
-    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n\n";
-    my $result;
+    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n";
+    $http_response_header .= $server_header;
+    $http_response_header .= "\n";
     my $rv = 0;
-    $result = syswrite($client, $http_response_header);
+    my $result = syswrite($client, $http_response_header) // -1;
     if ($result != length($http_response_header)) {
         print_log(2, "error when send response header to  $client\n");
         $rv = 1;
