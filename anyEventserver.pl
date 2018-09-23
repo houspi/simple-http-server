@@ -19,12 +19,18 @@ use constant DEFAULT_PORT => 1080;
 my $DIRECTORY_ROOT = "/home/edi/test/simple-http-server";
 
 my %http_methods = (
-        "GET"   => \&method_get,
+        "DELETE" => \&method_not_allowed,
+        "GET"    => \&method_get,
+        "PATCH"  => \&method_not_allowed,
+        "POST"   => \&method_not_allowed,
+        "PUT"    => \&method_not_allowed,
     );
 
 my %status = (
         "200"   => "OK",
-        "404"   => "NOT FOUND",
+        "400"   => "Bad Request",
+        "404"   => "Not Found",
+        "405"   => "Method Not Allowed",
     );
 
 # Parsing command line options
@@ -125,6 +131,7 @@ sub process_client {
     
     my %request_headers = ();
     
+    my $rv = 0;
     if ( exists($input_data{$id}) && scalar(@{$input_data{$id}}) ) {
         # $http_ver is ignored for now
         my ($method, $uri, $http_ver) = split(' ', @{$input_data{$id}}[0]);
@@ -147,16 +154,16 @@ sub process_client {
             print_log(2, "$_ => $request_headers{$_}\n");
         }
         if ( $method && exists($http_methods{$method}) ) {
-            return $http_methods{$method}->($client, $uri);
+            $rv = $http_methods{$method}->($client, $uri);
         } else {
             print_log(2, "error unknown method $method from $host, $port\n");
-            return 1;
+            $rv =  method_bad_request($client);
         }
     } else {
         print_log(2, "error empty request from $host, $port\n");
-        return 1;
+        $rv =  method_bad_request($client);
     }
-    return 0;
+    return $rv;
 }
 
 =item method_get
@@ -191,17 +198,68 @@ sub method_get {
     $http_response_header .= "Content-type: text/html\n";
     $http_response_header .= "Content-lenght: " . length($content) . "\n\n";
     my $result;
+    my $rv = 0;
     $result = syswrite($client, $http_response_header);
     if ($result != length($http_response_header)) {
         print_log(2, "error when send response header to  $client\n");
-        return 1;
+        $rv = 1;
     }
-    $result = syswrite($client, $content);
-    if ($result != length($content)) {
-        print_log(2, "error when send response content to  $client\n");
-        return 1;
+    if( !$rv ) {
+        $result = syswrite($client, $content);
+        if ($result != length($content)) {
+            print_log(2, "error when send response content to  $client\n");
+            $rv = 1;
+        }
     }
-    return 0;
+    return $rv;
+}
+
+=item method_not_allowed
+    client - client's socket
+    
+    return value
+    0 if success
+    non-zero if any error
+=cut
+sub method_not_allowed {
+    my $client = shift;
+
+    my $status_code;
+    $status_code = "405";
+
+    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n\n";
+    my $result;
+    my $rv = 0;
+    $result = syswrite($client, $http_response_header);
+    if ($result != length($http_response_header)) {
+        print_log(2, "error when send response header to  $client\n");
+        $rv = 1;
+    }
+    return $rv;
+}
+
+=item method_bad_request
+    client - client's socket
+    
+    return value
+    0 if success
+    non-zero if any error
+=cut
+sub method_bad_request {
+    my $client = shift;
+
+    my $status_code;
+    $status_code = "400";
+
+    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n\n";
+    my $result;
+    my $rv = 0;
+    $result = syswrite($client, $http_response_header);
+    if ($result != length($http_response_header)) {
+        print_log(2, "error when send response header to  $client\n");
+        $rv = 1;
+    }
+    return $rv;
 }
 
 =item print_log
