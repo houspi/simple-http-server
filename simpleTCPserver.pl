@@ -6,7 +6,9 @@
 
 
 use strict;
+use POSIX;
 use IO::Socket; 
+use Getopt::Std;
 
 my $DEFAULT_PORT = "1080";
 my $DIRECTORY_ROOT = "/home/edi/test/simple-http-server";
@@ -19,21 +21,48 @@ my %status = (
         "200"   => "OK",
         "404"   => "NOT FOUND",
     );
+# Parsing command line options
+my %opts;
+getopts('hdl:p:', \%opts);
+
+if ($opts{'h'}) {
+    Usage();
+    exit(0);
+}
+
+my $log_level = 0;
+if ( exists($opts{'l'}) ) {
+    $log_level = $opts{'l'};
+    $log_level =~ s/\D//g;
+}
+$log_level = 1 if ($log_level !~ /\d/);
+
+my $port;
+if ($opts{'p'}) {
+    $port = $opts{'p'};
+    $port =~ s/\D//g;
+}
+$port = $DEFAULT_PORT if (!$port);
+
+if ($opts{'d'}) {
+    #Turn off log if run as a daemon
+    $log_level = 0;
+    daemonize();
+}
 
 # Create socket
-my $port = $DEFAULT_PORT;
 my $server = IO::Socket::INET->new(
         LocalPort => $port, 
         Type => SOCK_STREAM, 
         Reuse => 1, 
         Listen => 5 )
     or die "Couldn't start server on port $port : $@\n"; 
-print "Start listening on $port\n";
+print_log(1, "Start listening on $port\n");
 
 # main loop
 # accept connection
 while (my $client = $server->accept()) {
-    print $client, " client connected\n";
+    print_log(2, $client, "client connected\n");
     # processing of client
     process_client($client);
     $client->close();
@@ -48,13 +77,13 @@ sub process_client {
     my $client = shift;
 
     my $data;
-    my @request_headers = ();
+    my @input_data = ();
+    # We take only 2048 bytes of input
     $client->recv($data, 2048, 0);
-    $data =~ s/\r\n/\n/g;
-    foreach ( split(/\n/, $data) ) {
-        push @request_headers, $_;
+    foreach ( split(/\r\n/, $data) ) {
+        push @input_data, $_;
     }
-    foreach ( @request_headers ) {
+    foreach ( @input_data ) {
         my ($command, $param) = split(/ /, $_);
         if (exists($commands{$command})) {
             $commands{$command}->($client, $param);
@@ -68,13 +97,14 @@ sub process_client {
 =cut
 sub command_get {
     my $client = shift;
-    my $param = shift;
+    my $uri = shift;
 
-    my $content = "";
-    $param =~ s/\.\.//g;
+    my $content;
+    $uri =~ s/\.\.//g;
     my $status_code;
     my $file;
-    if (open($file, $DIRECTORY_ROOT . $param)) {
+    my $file_name = $DIRECTORY_ROOT . $uri;
+    if ( -f $file_name && open($file, $file_name)) {
         $status_code = "200";
         {
             local $/ = undef;
@@ -91,3 +121,39 @@ sub command_get {
     $client->send("\n");
     $client->send($content);
 }
+
+=item print_log
+print input params to STDERR
+=cut
+sub print_log {
+    my $level = shift;
+    print STDERR join(" ", @_) if ($level <= $log_level);
+}
+
+=item daemonize
+run program as a daemon
+=cut
+sub daemonize {
+   setsid() or die "Can't call setsid: $!";
+   my $pid = fork() // die "Can't call fork: $!";
+   exit(0) if $pid;
+
+   open (STDIN, "</dev/null");
+   open (STDOUT, ">/dev/null");
+   open (STDERR, ">&STDOUT");
+ }
+ 
+=item Usage
+print help screen
+=cut
+sub Usage {
+    print <<EOF
+Usage $0 [-h] | [-d] [-l LogLevel] [-p Port]
+  -h  display this help and exit
+  -d  run as a daemon
+  -l  set log level of the messages. 1 by default. 0 to turn off.
+  -p  listen on Port
+
+EOF
+}
+
