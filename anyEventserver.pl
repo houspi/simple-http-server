@@ -17,7 +17,8 @@ use AnyEvent::Handle;
 use constant DEFAULT_PORT => 1080;
 
 my $DIRECTORY_ROOT = "/home/edi/test/simple-http-server";
-my $server_header = "Server: anyEvent_test\n";
+my $HTTP_SERVER_HEADER = "Server: anyEvent_test";
+my $HTTP_VERSION_HEADER = "HTTP/1.0";
 
 my %http_methods = (
         "DELETE" => \&method_not_allowed,
@@ -43,7 +44,7 @@ if ($opts{'h'}) {
     exit(0);
 }
 
-my $log_level = 0;
+my $log_level = 1;
 if ( exists($opts{'l'}) ) {
     $log_level = $opts{'l'};
     $log_level =~ s/\D//g;
@@ -197,8 +198,8 @@ sub method_get {
         $status_code = "404";
         $content = "";
     }
-    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n";
-    $http_response_header .= $server_header;
+    my $http_response_header = join(" ", $HTTP_VERSION_HEADER, $status_code, $status{$status_code})  . "\n";
+    $http_response_header .= $HTTP_SERVER_HEADER . "\n";
     $http_response_header .= "Content-type: text/html\n";
     $http_response_header .= "Content-lenght: " . length($content) . "\n\n";
     my $rv = 0;
@@ -229,8 +230,8 @@ sub method_not_allowed {
 
     my $status_code = "405";
 
-    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n";
-    $http_response_header .= $server_header;
+    my $http_response_header = join(" ", $HTTP_VERSION_HEADER, $status_code, $status{$status_code}) . "\n";
+    $http_response_header .= $HTTP_SERVER_HEADER . "\n";
     $http_response_header .= "\n";
     my $rv = 0;
     my $result = syswrite($client, $http_response_header) // -1;
@@ -253,8 +254,8 @@ sub method_bad_request {
 
     my $status_code = "400";
 
-    my $http_response_header = "HTTP/1.0 " . $status_code . " " . $status{$status_code} . "\n";
-    $http_response_header .= $server_header;
+    my $http_response_header = join(" ", $HTTP_VERSION_HEADER, $status_code, $status{$status_code}) . "\n";
+    $http_response_header .= $HTTP_SERVER_HEADER . "\n";
     $http_response_header .= "\n";
     my $rv = 0;
     my $result = syswrite($client, $http_response_header) // -1;
